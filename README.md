@@ -8,11 +8,7 @@ Command line application for checking WAV-files for identical channels, detectin
 
 Developed using these wonderful crates:
 
-[Hound](https://github.com/ruuda/hound)
-
-[Clap](https://github.com/kbknapp/clap-rs)
-
-[pbr](https://github.com/a8m/pb)
+**[Hound](https://github.com/ruuda/hound)**, **[Clap](https://github.com/kbknapp/clap-rs)**, **[pbr](https://github.com/a8m/pb)**
 
 ## Usage
 Basically, provide zrtstr with input file as an argument, or run it from a directory full of target WAV files.
