@@ -58,7 +58,3 @@ deploy:
 branches:
   only:
     - master
-
-skip_commits:
-  files:
-    - README.md
