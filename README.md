@@ -29,9 +29,9 @@ and the executable will be in `target/release/zrtstr`.
 
 ## TODO
 Here are the current problems and planned features:
-- [] **Float support**: Add support for IEEE Float files
-- [] **Add automatic tests**
-- [] **Refactor excessive copy-pasted nested blocks in code**
+- [ ] **Float support**: Add support for IEEE Float files
+- [ ] **Add automatic tests**
+- [ ] **Refactor excessive copy-pasted nested blocks in code**
 
 ## Contributing ##
 This is an enthusiast project, so any help and/or critique will be much appreciated.
