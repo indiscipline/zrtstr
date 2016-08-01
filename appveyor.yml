@@ -26,9 +26,35 @@ install:
   - rustc -V
   - cargo -V
 
+# ???
+build: false
+
+before_deploy:
+  # Generate artifacts for release
+  - cargo build --release
+  - mkdir staging
+  # TODO update this part to copy the artifacts that make sense for your project
+  - copy target\release\zrtstr.exe staging
+  - cd staging
+    # release zipfile will look like 'zrtstr-v1.2.3-x86_64-pc-windows-msvc'
+  - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip *
+  - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip
+  
+deploy:
+  description: 'Windows release'
+  # All the zipped artifacts will be deployed
+  artifact: /.*\.zip/
+  auth_token:
+    secure: LwnCUuVi6YlhKOdDif/XgJkQ7MHwiAELreMYMQD6421T5Uq8il0vV1Xi35pn6hHT
+  provider: GitHub
+  # deploy when a new tag is pushed and only on the stable channel
+  on:
+    # channel to use to produce the release artifacts
+    # NOTE make sure you only release *once* per target
+    # TODO you may want to pick a different channel
+    CHANNEL: stable
+    appveyor_repo_tag: true
+
 branches:
   only:
     - master
-
-build_script:
-  - cmd: cargo build --release
