@@ -1,0 +1,25 @@
+[package]
+name = "zrtstr"
+version = "0.1.0"
+authors = ["Kirill I. <elephanttalk@protonmail.com>"]
+
+[dependencies]
+hound = "2"
+itertools = "*"
+
+[dependencies.pbr]
+git = "https://github.com/a8m/pb.git"
+
+[dependencies.clap]
+version = "2"
+default-features = false
+features = ["unstable"]
+
+# The release profile, used for `cargo build --release`
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
