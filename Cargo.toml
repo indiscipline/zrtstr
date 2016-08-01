@@ -3,6 +3,11 @@ name = "zrtstr"
 version = "0.1.0"
 authors = ["Kirill I. <elephanttalk@protonmail.com>"]
 
+exclude = [
+	".travis.yml",
+	"appveyor.yml",
+]
+
 [dependencies]
 hound = "2"
 itertools = "*"
