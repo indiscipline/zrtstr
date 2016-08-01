@@ -39,7 +39,7 @@ before_deploy:
     # release zipfile will look like 'zrtstr-v1.2.3-x86_64-pc-windows-msvc'
   - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip *
   - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip
-  
+
 deploy:
   description: 'Windows release'
   # All the zipped artifacts will be deployed
@@ -58,7 +58,7 @@ deploy:
 branches:
   only:
     - master
-	
+
 skip_commits:
   files:
     - README.md
