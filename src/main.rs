@@ -58,7 +58,6 @@ fn main() {
     }
 }
 
-
 fn read_file(fname: &str) -> Result<WavReader<std::io::BufReader<std::fs::File>>, String> {
     WavReader::open(fname).map_err(|err| err.to_string())
 }
@@ -109,25 +108,27 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>, dither_threshold: u32) 
 
     // Read pairs of samples, update progress bar each progress_chunk iteration.
     reader.samples::<i32>()
-          .zip(progress_iter)
-          .batching(|mut it| {
-              match it.next() {
-                  None => None,
-                  Some(x) => {
-                      match it.next() {
-                          None => None,
-                          Some(y) => {
-                              if y.1 >= progress_chunk {
-                                  pb.add(progress_chunk);
-                              };
-                              Some(x.0.unwrap() - y.0.unwrap())
-                          }
-                      }
-                  }
-              }
-          })
-          .any(|diff| comparator(diff))  //Actual comparison via closure
+        .zip(progress_iter)
+        .batching(|mut it| {
+            match it.next() {
+                None => None,
+                Some(x) => {
+                    match it.next() {
+                        None => None,
+                        Some(y) => {
+                            if y.1 >= progress_chunk {
+                                pb.add(progress_chunk);
+                            };
+                            Some(x.0.unwrap() - y.0.unwrap())
+                        }
+                    }
+                }
+            }
+        })
+        .any(|diff| comparator(diff)) //Actual comparison via closure
 }
+
+
 
 /// Copy left channel of the input file to mono wav
 fn copy_to_mono(input_fname: &str, spec: &WavSpec, no_overwrites: bool) -> Result<(), String> {
@@ -155,50 +156,37 @@ fn copy_to_mono(input_fname: &str, spec: &WavSpec, no_overwrites: bool) -> Resul
 
     let mut writer = try!(WavWriter::create(&output_path, new_spec).map_err(|err| err.to_string()));
     let mut error_occurred = false;
+
+    // Macros for abstracting sample-copying logic, streaming from reader to writer
+    macro_rules! stream_samples {
+        ($num:ty, $reader:ident, $writer:ident, $error:ident) => {
+            for sample in $reader.samples::<$num>().step(2) {
+                if $writer.write_sample(sample.unwrap()).is_err() {
+                    $error = true;
+                    println!("Failed to write sample");
+                    break;
+                }
+            }
+        }
+    }
+
     match spec.bits_per_sample {
-        8 => {
-            for sample in reader.samples::<i8>().step(2) {
-                if writer.write_sample(sample.unwrap()).is_err() {
-                    error_occurred = true;
-                    println!("Failed to write sample");
-                    break;
-                }
-            }
-        }
-        16 => {
-            for sample in reader.samples::<i16>().step(2) {
-                if writer.write_sample(sample.unwrap()).is_err() {
-                    error_occurred = true;
-                    println!("Failed to write sample");
-                    break;
-                }
-            }
-        }
+        8 => stream_samples!(i8, reader, writer, error_occurred),
+        16 => stream_samples!(i16, reader, writer, error_occurred),
         24 | 32 => {
             match spec.sample_format {
-                SampleFormat::Float => {
-                    for sample in reader.samples::<f32>().step(2) {
-                        if writer.write_sample(sample.unwrap()).is_err() {
-                            error_occurred = true;
-                            println!("Failed to write sample");
-                            break;
-                        }
-                    }},
-                SampleFormat::Int => {
-                    for sample in reader.samples::<i32>().step(2) {
-                        if writer.write_sample(sample.unwrap()).is_err() {
-                            error_occurred = true;
-                            println!("Failed to write sample");
-                            break;
-                        }
-                    }}
+                SampleFormat::Float =>
+                    stream_samples!(f32, reader, writer, error_occurred),
+                SampleFormat::Int =>
+                    stream_samples!(i32, reader, writer, error_occurred),
             }
-        }
+        },
         _ => {
             error_occurred = true;
             println!("Can't write a file! Unsupported sample rate requested!");
         }
-    };
+    }
+
     if writer.finalize().is_err() {
         error_occurred = true;
         println!("Failed to finalize wav file");
