@@ -1,7 +1,6 @@
 // TODO:
-// * IEEE Float support
+// * IEEE Float writing support
 // * Tests
-// * Refactor copy_to_mono nestiness.
 
 extern crate hound;
 extern crate itertools;
@@ -33,25 +32,30 @@ fn main() {
                 Ok(_) => {}
                 Err(err) => println!("{}", err.to_string()),
             }
-        },
+        }
         None => {
             // If no file name present, process all WAVs in current dir
             println!("No input file given. Processing current directory.");
             let current_dir = env::current_dir().unwrap();
             for dir_entry in read_dir(current_dir).expect("Can't read current directory") {
-                match dir_entry.map(|entry| {
+                match dir_entry {
                     // scan each directory entry, if accessible
-                    let path_str = entry.path().to_str().unwrap_or("").to_string(); //get path String
-                    validate_path(path_str.clone()).map(|_| {
-                        // if it has wav extension
-                        match process_file(&path_str, &conf) {// process path
-                            Ok(_) => Ok(()),
-                            Err(err) => Err(err.to_string()),
+                    Ok(entry) => {
+                        // get path String
+                        let path_str = entry.path().to_str().unwrap_or("").to_string();
+                        let res = if validate_path(path_str.clone()).is_ok() {
+                            // if file has wav extension
+                            process_file(&path_str, &conf)
+                        } else {
+                            // ignore other files
+                            Ok(())
+                        };
+                        match res {
+                            Ok(_) => {},
+                            Err(err) => println!("{}", err.to_string()),
                         }
-                    })
-                }) {
-                    Ok(_) => {}
-                    Err(err) => println!("{}", err.to_string()),
+                    }
+                    Err(_) => {}
                 }
             }
         }
@@ -70,32 +74,23 @@ fn process_file(fname: &str, conf: &Conf) -> Result<(), String> {
     if spec.channels != 2 {
         return Err(String::from("File is not stereo! Exiting"));
     }
-    if spec.sample_format == SampleFormat::Float {
-        return Err(String::from("IEEE Float files are not supported! Exiting"));
-    }
 
-    if zero_test(reader, conf.dither) {
+    if zero_test(reader, conf.dither, spec.sample_format) {
         println!("\nFile is not double mono, channels are different!");
-        Ok(())
     } else {
         println!("\nChannels are identical! Faux stereo detected");
         if !conf.dry_run {
             try!(copy_to_mono(fname, &spec, conf.no_overwrites));
         }
-        Ok(())
     }
+    Ok(())
 }
 
 /// Check if data in each pair of samples is identical, or lies within given difference
-fn zero_test<R: std::io::Read>(mut reader: WavReader<R>, dither_threshold: u32) -> bool {
-
-    // Define a closure which compares the difference of two samples.
-    // If dither_threshold is given, compare to it, else it must be 0
-    let comparator: Box<Fn(i32) -> bool> = if dither_threshold == 0 {
-        Box::new(|x: i32| x != 0)
-    } else {
-        Box::new(|x: i32| x.abs() as u32 > dither_threshold)
-    };
+fn zero_test<R: std::io::Read>(mut reader: WavReader<R>,
+                               dither_threshold: u32,
+                               format: SampleFormat)
+                               -> bool {
 
     let dur_samples = reader.duration();
     let progress_chunk = dur_samples as u64 / 100;
@@ -106,33 +101,83 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>, dither_threshold: u32) 
     // Initialize progress bar
     let mut pb = ProgressBar::new(dur_samples as u64);
 
-    // Read pairs of samples, update progress bar each progress_chunk iteration.
-    reader.samples::<i32>()
-        .zip(progress_iter)
-        .batching(|mut it| {
-            match it.next() {
-                None => None,
-                Some(x) => {
+    match format {
+        // TODO: (?) Write a macro to unify logic for both formats
+
+        // Process INT samples
+        SampleFormat::Int => {
+            // Define a closure which compares the difference of two samples.
+            // If dither_threshold is given, compare to it, else it must be 0
+            let comparator: Box<Fn(i32) -> bool> = if dither_threshold == 0 {
+                Box::new(|x: i32| x != 0)
+            } else {
+                Box::new(|x: i32| x.abs() as u32 > dither_threshold)
+            };
+
+            reader.samples::<i32>()
+                .zip(progress_iter)
+                .batching(|mut it| {
                     match it.next() {
                         None => None,
-                        Some(y) => {
-                            if y.1 >= progress_chunk {
-                                pb.add(progress_chunk);
-                            };
-                            Some(x.0.unwrap() - y.0.unwrap())
+                        Some(x) => {
+                            match it.next() {
+                                None => None,
+                                Some(y) => {
+                                    if y.1 >= progress_chunk {
+                                        pb.add(progress_chunk);
+                                    };
+                                    Some(x.0.unwrap() - y.0.unwrap())
+                                }
+                            }
                         }
                     }
-                }
-            }
-        })
-        .any(|diff| comparator(diff)) //Actual comparison via closure
+                })
+                .any(|diff| comparator(diff)) //Actual comparison via closure
+        }
+        // Process FLOAT samples
+        SampleFormat::Float => {
+            // Define a closure which compares the difference of two samples.
+            // If dither_threshold is given, compare to it, else it must be 0
+            let comparator: Box<Fn(f32) -> bool> = if dither_threshold == 0 {
+                Box::new(|x: f32| x != 0f32)
+            } else {
+                // Average 16-bit dither sample is ~ 0.000117
+                // However, fluctuations are quite high, short tests showed
+                // x10 multiplier (=default one) for the Threshold to be reasonable.
+                // !! Needs more research!
+                Box::new(|x: f32| x.abs() > dither_threshold as f32 * 0.000117f32)
+            };
+            reader.samples::<f32>()
+                .zip(progress_iter)
+                .batching(|mut it| {
+                    match it.next() {
+                        None => None,
+                        Some(x) => {
+                            match it.next() {
+                                None => None,
+                                Some(y) => {
+                                    if y.1 >= progress_chunk {
+                                       pb.add(progress_chunk);
+                                    };
+                                    Some(x.0.unwrap() - y.0.unwrap())
+                                }
+                            }
+                        }
+                    }
+                })
+                .any(|diff| comparator(diff)) //Actual comparison via closure
+        }
+    }
 }
-
-
 
 /// Copy left channel of the input file to mono wav
 fn copy_to_mono(input_fname: &str, spec: &WavSpec, no_overwrites: bool) -> Result<(), String> {
     println!("  * Converting to true-mono...");
+
+    // TODO: Remove as Hound supports writing float data
+    if spec.sample_format == SampleFormat::Float {
+        return Err("  ! Writing IEEE_FLOAT files not implemented yet!".to_string());
+    }
 
     let new_spec = WavSpec {
         channels: 1,
@@ -175,12 +220,11 @@ fn copy_to_mono(input_fname: &str, spec: &WavSpec, no_overwrites: bool) -> Resul
         16 => stream_samples!(i16, reader, writer, error_occurred),
         24 | 32 => {
             match spec.sample_format {
-                SampleFormat::Float =>
-                    stream_samples!(f32, reader, writer, error_occurred),
-                SampleFormat::Int =>
-                    stream_samples!(i32, reader, writer, error_occurred),
+                SampleFormat::Float => unreachable!(),
+                // stream_samples!(f32, reader, writer, error_occurred),
+                SampleFormat::Int => stream_samples!(i32, reader, writer, error_occurred),
             }
-        },
+        }
         _ => {
             error_occurred = true;
             println!("Can't write a file! Unsupported sample rate requested!");
@@ -200,7 +244,7 @@ fn copy_to_mono(input_fname: &str, spec: &WavSpec, no_overwrites: bool) -> Resul
         Err(format!("Failed writing \"{}\"", output_path.to_str().unwrap()))
     } else {
         println!("\"{}\" successfully written!",
-            output_path.to_str().unwrap());
+                 output_path.to_str().unwrap());
         Ok(())
     }
 }
