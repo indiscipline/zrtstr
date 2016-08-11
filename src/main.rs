@@ -38,24 +38,20 @@ fn main() {
             println!("No input file given. Processing current directory.");
             let current_dir = env::current_dir().unwrap();
             for dir_entry in read_dir(current_dir).expect("Can't read current directory") {
-                match dir_entry {
+                if let Ok(entry) = dir_entry {
                     // scan each directory entry, if accessible
-                    Ok(entry) => {
-                        // get path String
-                        let path_str = entry.path().to_str().unwrap_or("").to_string();
-                        let res = if validate_path(path_str.clone()).is_ok() {
-                            // if file has wav extension
-                            process_file(&path_str, &conf)
-                        } else {
-                            // ignore other files
-                            Ok(())
-                        };
-                        match res {
-                            Ok(_) => {},
-                            Err(err) => println!("{}", err.to_string()),
-                        }
-                    }
-                    Err(_) => {}
+                    // get path String
+                    let path_str = entry.path().to_str().unwrap_or("").to_string();
+                    let res = if validate_path(path_str.clone()).is_ok() {
+                        // if file has wav extension
+                        process_file(&path_str, &conf)
+                    } else {
+                        // ignore other files
+                        Ok(())
+                    };
+                    if let Err(err) = res {
+                        println!("{}", err.to_string());
+                    };
                 }
             }
         }
@@ -93,17 +89,26 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>,
                                -> bool {
 
     let dur_samples = reader.duration();
-    let progress_chunk = dur_samples as u64 / 100;
-    let progress_iter = (1..progress_chunk + 1).cycle();
+    let progress_chunk = dur_samples / 100;
 
     // println!("Duration in samples={},  Sample rate={}",reader.duration(),spec.sample_rate);
 
     // Initialize progress bar
     let mut pb = ProgressBar::new(dur_samples as u64);
 
+    // Closure for updating progress bar
+    let mut update_pb = |sample_num: usize| {
+        if sample_num as u32 % progress_chunk == 0 {
+            pb.add(progress_chunk as u64);
+        } else if sample_num as u32 == dur_samples - 1 {
+            // - 1 since comparing the left channel
+            pb.finish();
+        }
+    };
+
     match format {
         // TODO: (?) Write a macro to unify logic for both formats
-
+        //
         // Process INT samples
         SampleFormat::Int => {
             // Define a closure which compares the difference of two samples.
@@ -115,7 +120,7 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>,
             };
 
             reader.samples::<i32>()
-                .zip(progress_iter)
+                .enumerate()
                 .batching(|mut it| {
                     match it.next() {
                         None => None,
@@ -123,10 +128,8 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>,
                             match it.next() {
                                 None => None,
                                 Some(y) => {
-                                    if y.1 >= progress_chunk {
-                                        pb.add(progress_chunk);
-                                    };
-                                    Some(x.0.unwrap() - y.0.unwrap())
+                                    update_pb(x.0);
+                                    Some(x.1.unwrap() - y.1.unwrap())
                                 }
                             }
                         }
@@ -148,7 +151,7 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>,
                 Box::new(|x: f32| x.abs() > dither_threshold as f32 * 0.000117f32)
             };
             reader.samples::<f32>()
-                .zip(progress_iter)
+                .enumerate()
                 .batching(|mut it| {
                     match it.next() {
                         None => None,
@@ -156,10 +159,8 @@ fn zero_test<R: std::io::Read>(mut reader: WavReader<R>,
                             match it.next() {
                                 None => None,
                                 Some(y) => {
-                                    if y.1 >= progress_chunk {
-                                       pb.add(progress_chunk);
-                                    };
-                                    Some(x.0.unwrap() - y.0.unwrap())
+                                    update_pb(x.0);
+                                    Some(x.1.unwrap() - y.1.unwrap())
                                 }
                             }
                         }
