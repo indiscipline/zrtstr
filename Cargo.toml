@@ -1,6 +1,6 @@
 [package]
 name = "zrtstr"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["Kirill I. <elephanttalk@protonmail.com>"]
 
 exclude = [
