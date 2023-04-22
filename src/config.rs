@@ -1,10 +1,10 @@
 extern crate clap;
 
-use clap::{Arg, App};
+use clap::{Arg, Command};
 use std::fs;
 use std::process;
 
-static LICENSE: &'static str = "zrtstr licensed under GNU General Public License version 2 or later;
+static LICENSE: &str = "zrtstr licensed under GNU General Public License version 2 or later;
 Full License available at <http://gnu.org/licenses/gpl.html>.
 This is free software: you are free to change and redistribute it.
 There is NO WARRANTY, to the extent permitted by law.";
@@ -16,7 +16,7 @@ pub struct Conf {
 }
 
 pub fn get() -> (Option<String>, Conf) {
-    let matches = App::new("zrtstr")
+    let matches = Command::new("zrtstr")
         .author(crate_authors!())
         .version(crate_version!())
         .about("Check stereo WAV-file for identical channels, detecting \
@@ -24,39 +24,43 @@ pub fn get() -> (Option<String>, Conf) {
                 DAWs.\nOutputs a true-mono WAV file on detection of \
                 faux-stereo. Takes left channel of the input file, writes in the \
                 same location with -MONO suffix in file name.")
-        .arg(Arg::with_name("INPUT")
+        .arg(Arg::new("INPUT")
                 .help("Path to the input file to process. If no input given, \
                 process all WAV files in current directory.")
                 .index(1)
-                .validator(validate_path))
-        .arg(Arg::with_name("dither")
-                .short("d")
+                .value_parser(validate_path))
+        .arg(Arg::new("dither")
+                .short('d')
                 .long("dither")
                 .value_name("THRESHOLD")
                 .required(false)
                 .help("Set threshold for sample level difference to process \
-                        dithered audio.{n}Positive number (amplitude delta).")
+                        dithered audio.{n}Natural number (amplitude delta). Set to 0 for strict checking.")
                 .next_line_help(true)
-                .takes_value(true)
+                .num_args(1)
+                .default_missing_value("10")
                 .default_value("10")
-                .validator(validate_u32))
-        .arg(Arg::with_name("license")
-                .short("l")
+                .value_parser(clap::value_parser!(u32)))
+        .arg(Arg::new("license")
+                .short('l')
                 .long("license")
+                .action(clap::ArgAction::SetTrue)
                 .help("Display the license information."))
-        .arg(Arg::with_name("dry_run")
-                .short("n")
+        .arg(Arg::new("dry_run")
+                .short('n')
                 .long("nowrite")
+                .action(clap::ArgAction::SetTrue)
                 .help("Disable saving converted mono files. Analyze pass only.")
                 .required(false))
-        .arg(Arg::with_name("no_overwrites")
-                .short("p")
+        .arg(Arg::new("no_overwrites")
+                .short('p')
                 .long("protect")
+                .action(clap::ArgAction::SetTrue)
                 .help("Disable overwriting when saving converted mono files.")
                 .required(false))
         .get_matches();
 
-    if matches.is_present("license") {
+    if matches.get_flag("license") {
         println!("{}", LICENSE);
         println!("\nclap (Command Line Argument Parser) License:");
         println!(include_str!("../LICENSE-CLAP"));
@@ -64,32 +68,19 @@ pub fn get() -> (Option<String>, Conf) {
     }
 
     let conf = Conf {
-        dither: if matches.is_present("dither") {
-            value_t!(matches, "dither", u32).unwrap_or(10)
-        } else {
-            0
-        },
-        dry_run: matches.is_present("dry_run"),
-        no_overwrites: matches.is_present("no_overwrites"),
+        dither: *matches.get_one::<u32>("dither").unwrap(),
+        dry_run: matches.get_flag("dry_run"),
+        no_overwrites: matches.get_flag("no_overwrites"),
     };
-    let input_fname = if matches.is_present("INPUT") {
-            Some(matches.value_of("INPUT").unwrap().to_string())
-        } else {
-            None
-        };
+    let input_fname = matches.get_one::<String>("INPUT").map(|s| s.to_string());
+
     (input_fname, conf)
 }
 
-pub fn validate_u32(value: String) -> Result<(), String> {
-    value.parse::<u32>()
-         .map(|_| ())
-         .map_err(|_| "Supplied parameter is not a valid number!".to_owned())
-}
-
-pub fn validate_path(path: String) -> Result<(), String> {
-    if fs::metadata(&path).is_ok() {
+pub fn validate_path(path: &str) -> Result<String, String> {
+    if fs::metadata(path).is_ok() {
         if path.to_lowercase().ends_with(".wav") {
-            Ok(())
+            Ok(path.to_string())
         } else {
             // clap automatically adds "error: " to the beginning of the message.
             Err(String::from("Input file must have .wav extension!"))
