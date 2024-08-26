@@ -16,7 +16,7 @@ Zrtstr reads interleaved channel samples from a target stereo file one by one an
 **Defaults include a reasonable dither threshold value, for strict checking set it to zero with `-d 0`!**
 
 ## Installation
-Rearchiver is tested to work under Windows and GNU/Linux. Probably works on OSX with no changes.
+Zrtstr is tested to work under Windows and GNU/Linux. Probably works on OSX with no changes.
 
 ### Download
 **Binaries** for the main platforms are provided in [Releases](https://github.com/indiscipline/zrtstr/releases).
